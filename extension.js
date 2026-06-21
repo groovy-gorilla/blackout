@@ -46,6 +46,8 @@ export default class BlackScreenExtension {
   	}
 	
 	_showScreen() {
+		this._previousProfile = getPowerProfile();
+		
 		global.display.set_cursor(Meta.Cursor.NONE);
 
 	  	const count = global.display.get_n_monitors();
