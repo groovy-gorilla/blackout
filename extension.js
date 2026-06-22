@@ -3,20 +3,61 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import Meta from 'gi://Meta';
 import Gio from 'gi://Gio';
 
-function getPowerProfile() {  
-    const proc = Gio.Subprocess.new(
-        ['powerprofilesctl', 'get'],
-        Gio.SubprocessFlags.STDOUT_PIPE
+async function getPowerProfile() {
+    const proxy = await Gio.DBusProxy.new_for_bus(
+        Gio.BusType.SYSTEM,
+        Gio.DBusProxyFlags.NONE,
+        null,
+        'net.hadess.PowerProfiles',
+        '/net/hadess/PowerProfiles',
+        'org.freedesktop.DBus.Properties',
+        null
     );
-  
-    const [, stdout] = proc.communicate_utf8(null, null);
-  
-    return stdout.trim();  
+
+    const result = await proxy.call(
+        'Get',
+        new GLib.Variant(
+            '(ss)',
+            ['net.hadess.PowerProfiles', 'ActiveProfile']
+        ),
+        Gio.DBusCallFlags.NONE,
+        -1,
+        null
+    );
+
+    return result.deepUnpack()[0].deepUnpack();
+}
+
+async function setPowerProfile(profile) {
+    const proxy = await Gio.DBusProxy.new_for_bus(
+        Gio.BusType.SYSTEM,
+        Gio.DBusProxyFlags.NONE,
+        null,
+        'net.hadess.PowerProfiles',
+        '/net/hadess/PowerProfiles',
+        'org.freedesktop.DBus.Properties',
+        null
+    );
+
+    await proxy.call(
+        'Set',
+        new GLib.Variant(
+            '(ssv)',
+            [
+                'net.hadess.PowerProfiles',
+                'ActiveProfile',
+                new GLib.Variant('s', profile),
+            ]
+        ),
+        Gio.DBusCallFlags.NONE,
+        -1,
+        null
+    );
 }
 
 export default class BlackScreenExtension {
   
-	enable() {
+	async enable() {
     	this._idleMonitor = global.backend.get_core_idle_monitor();
     	this._idleWatch = 0;
     	this._activeWatch = 0;
@@ -45,7 +86,7 @@ export default class BlackScreenExtension {
     	});      
   	}
 	
-	_showScreen() {
+	async _showScreen() {
 		this._previousProfile = getPowerProfile();
 		
 		global.display.set_cursor(Meta.Cursor.NONE);
@@ -75,22 +116,16 @@ export default class BlackScreenExtension {
       		this._installIdleWatch();
     	});
         
-    	Gio.Subprocess.new(
-      		['powerprofilesctl', 'set', 'power-saver'],
-      		Gio.SubprocessFlags.NONE
-    	);        
+    	await setPowerProfile('power-saver');       
   	}
 
-  	_hideScreen() {
+  	async _hideScreen() {
     	for (const actor of this._actors) actor.destroy();
 
 	  	this._actors = [];
 
 	  	global.display.set_cursor(Meta.Cursor.DEFAULT);
 	    
-	  	Gio.Subprocess.new(
-      		['powerprofilesctl', 'set', this._previousProfile],
-      		Gio.SubprocessFlags.NONE
-    	);        
+	  	await setPowerProfile(this._previousProfile);     
   	}
 }
