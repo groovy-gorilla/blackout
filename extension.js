@@ -17,17 +17,10 @@ export default class BlackoutExtension {
         this._actors = [];
         this._previousProfile = null;
 
-        this._powerProxy = Gio.DBusProxy.new_for_bus_sync(
-            Gio.BusType.SYSTEM,
-            Gio.DBusProxyFlags.NONE,
-            null,
-            'net.hadess.PowerProfiles',
-            '/net/hadess/PowerProfiles',
-            'org.freedesktop.DBus.Properties',
-            null
-        );
-
         this._installIdleWatch();
+
+        // GNOME 50
+        this._tracker = global.backend.get_cursor_tracker?.();
     }
 
     disable() {
@@ -41,13 +34,39 @@ export default class BlackoutExtension {
             this._activeWatch = 0;
         }
 
+        if (this._tracker) {
+            this._hasVisibilityInhibited && !this._tracker.get_pointer_visible())
+                this._tracker.uninhibit_cursor_visibility();
+            this._tracker = null;
+            this._hasVisibilityInhibited = null;
+        }
+
         this._hideScreen();
 
         this._powerProxy = null;
     }
 
+    getPowerProxy() {
+        if (this._powerProxy)
+            return this._powerProxy;
+
+        this._powerProxy = Gio.DBusProxy.new_for_bus_sync(
+            Gio.BusType.SYSTEM,
+            Gio.DBusProxyFlags.NONE,
+            null,
+            'net.hadess.PowerProfies',
+            '/net/hadess/PowerProfiles',
+            'org.freedesktop.DBus.Properties',
+            null
+        );
+
+        return this._powerProxy;
+    }
+
     getPowerProfile() {
-        const result = this._powerProxy.call_sync(
+        const proxy = this.getPowerProxy();
+        
+        const result = proxy.call_sync(
             'Get',
             new GLib.Variant(
                 '(ss)',
@@ -65,7 +84,9 @@ export default class BlackoutExtension {
     }
 
     setPowerProfile(profile) {
-        this._powerProxy.call_sync(
+        const proxy = this.getPowerProxy();
+        
+        proxy.call_sync(
             'Set',
             new GLib.Variant(
                 '(ssv)',
@@ -97,7 +118,18 @@ export default class BlackoutExtension {
 
         this._previousProfile = this.getPowerProfile();
 
-        global.display.set_cursor(Meta.Cursor.NONE);
+        // GNOME 48, 49
+        if (Meta.Cursor) {
+            global.display.set_cursor(Meta.Cursor.NONE);
+        }
+
+        // GNOME 50
+        else if (global.backend.get_cursor_tracker) {
+            if (this._tracker.get_pointer_visible()) {
+                this._tracker.inhibit_cursor_visibility();
+                this._hasVisibilityInhibited = true;
+            }
+        }
 
         const count = global.display.get_n_monitors();
 
@@ -151,7 +183,18 @@ export default class BlackoutExtension {
             });
         }
 
-        global.display.set_cursor(Meta.Cursor.DEFAULT);
+        // GNOME 48, 49
+        if (Meta.Cursor) {
+            global.display.set_cursor(Meta.Cursor.DEFAULT);
+        }
+
+        // GNOME 50
+        else if (global.backend.get_cursor_tracker) {
+            if (!this._tracker.get_pointer_visible()) {
+                this._tracker.uninhibit_cursor_visibility();
+            }
+            this._hasVisibilityInhibited = false;            
+        }
 
         if (this._previousProfile) {
             this.setPowerProfile(this._previousProfile);
