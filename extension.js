@@ -3,10 +3,10 @@ import Meta from 'gi://Meta';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Clutter from 'gi://Clutter';
-
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import { extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 
-export default class BlackoutExtension {
+export default class BlackoutExtension extends Extension {
 
     enable() {
         this._idleMonitor = global.backend.get_core_idle_monitor();
@@ -16,6 +16,12 @@ export default class BlackoutExtension {
 
         this._actors = [];
         this._previousProfile = null;
+
+        this._settings = this.getSettings();
+        this._settingsChangedId = this._settings.connect(
+            'changed::idle-minutes',
+            () => this._onIdleMinutesChanged()
+        );
 
         this._installIdleWatch();
 
@@ -41,9 +47,23 @@ export default class BlackoutExtension {
             this._hasVisibilityInhibited = null;
         }
 
+        if (this._settingsChangedId) {
+            this._settings.disconnect(this._settingsChangedId);
+            this._settingsChangedId = 0;
+        }
+
         this._hideScreen();
 
         this._powerProxy = null;
+    }
+
+    _onIdleMinutesChanged() {
+        if (this._idleWatch) {
+            this._idleMonitor.remove_watch(this._idleWatch);
+            this._idleWatch = 0;
+        }
+
+        this._installIdleWatch();
     }
 
     getPowerProxy() {
@@ -103,8 +123,11 @@ export default class BlackoutExtension {
     }
 
     _installIdleWatch() {
+        const minutes = this._settings.get_int('idle-minutes');
+        const timeout = minutes * 60 * 1000;
+        
         this._idleWatch = this._idleMonitor.add_idle_watch(
-            10 * 60 * 1000, // 10 minutes
+            timeout,
             () => {
                 this._idleWatch = 0;
                 this._showScreen();
@@ -190,10 +213,10 @@ export default class BlackoutExtension {
 
         // GNOME 50
         else if (global.backend.get_cursor_tracker) {
-            if (!this._tracker.get_pointer_visible()) {
+            if (!this._hasVisibilityInhibited) {
                 this._tracker.uninhibit_cursor_visibility();
-            }
-            this._hasVisibilityInhibited = false;            
+                this._hasVisibilityInhibited = false; 
+            }          
         }
 
         if (this._previousProfile) {
