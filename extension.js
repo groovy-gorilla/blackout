@@ -54,7 +54,7 @@ export default class BlackoutExtension {
             Gio.BusType.SYSTEM,
             Gio.DBusProxyFlags.NONE,
             null,
-            'net.hadess.PowerProfies',
+            'net.hadess.PowerProfiles',
             '/net/hadess/PowerProfiles',
             'org.freedesktop.DBus.Properties',
             null
